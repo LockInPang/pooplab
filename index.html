@@ -1,16 +1,25 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><meta name="theme-color" content="#241a15"><title>Poop Lab</title>
 <style>*{box-sizing:border-box}body{margin:0;background:#241a15;color:#fff1db;font-family:system-ui,sans-serif;overscroll-behavior:none}main{height:100dvh;display:flex;flex-direction:column;padding:12px;gap:10px}header{display:flex;justify-content:space-between;align-items:center}h1{font-size:20px;margin:0}button{border:0;border-radius:12px;background:#dfaa69;padding:9px 14px;font-weight:700;color:#322013}canvas{background:linear-gradient(#f5e3c7,#dfc39f);border-radius:16px;flex:1;min-height:0;width:100%;touch-action:none}section{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-bottom:env(safe-area-inset-bottom)}label{font-size:13px}input{width:100%;accent-color:#d9a16b}small{color:#d7c4ad}</style></head>
-<body><main><header><h1>💩 Poop Lab</h1><button id="reset">重新生成</button></header><canvas id="game"></canvas><section><label>软硬度 <input id="hard" type="range" min="1" max="100" value="55"></label><label>阻尼 <input id="damp" type="range" min="1" max="100" value="40"></label></section><small>手指按住屎拖动，松手甩出去 · XPBD 软体模拟</small></main>
+<body><main><header><h1>💩 Poop Lab</h1><button id="reset">重新生成</button></header><canvas id="game"></canvas><section><label>软硬度 <input id="hard" type="range" min="1" max="100" value="37"></label><label>阻尼 <input id="damp" type="range" min="1" max="100" value="60"></label></section><small>写实泥状质感 · 手指拖拽、揉捏、甩动</small></main>
 <script>
 (()=>{'use strict';
 const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d'),hard=document.querySelector('#hard'),damp=document.querySelector('#damp');
-let W=300,H=500,pts=[],edges=[],tris=[],grab=-1,mouse={x:0,y:0},last=performance.now(),acc=0;
+let W=300,H=500,pts=[],edges=[],tris=[],spots=[],grab=-1,mouse={x:0,y:0},last=performance.now(),acc=0;
 function resize(){let r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2);W=r.width;H=r.height;canvas.width=Math.round(W*d);canvas.height=Math.round(H*d);ctx.setTransform(d,0,0,d,0,0)}
-function reset(){pts=[];edges=[];tris=[];grab=-1;const cols=9,rows=7,step=Math.min(W/12,32),ox=W/2-(cols-1)*step/2,oy=Math.min(100,H*.22);
-for(let j=0;j<rows;j++)for(let i=0;i<cols;i++){let x=ox+i*step,y=oy+j*step;pts.push({x,y,px:x,py:y,inv:1})}
+function reset(){pts=[];edges=[];tris=[];spots=[];grab=-1;
+const cols=11,rows=9,unit=Math.min(W/13,27),cy=Math.min(H*.34,210),cx=W/2;
+const widths=[.17,.34,.52,.67,.82,.93,1,1.04,.98];
+for(let j=0;j<rows;j++)for(let i=0;i<cols;i++){
+let u=(i-(cols-1)/2)/((cols-1)/2),r=widths[j],wave=Math.sin(i*1.8+j*2.7)*.035;
+let x=cx+u*unit*5*r+Math.sin(j*2.4+i*.8)*unit*.07;
+let y=cy+(j-4)*unit*.82+wave*unit+(1-Math.abs(u))*Math.sin(j*1.7)*unit*.045;
+pts.push({x,y,px:x,py:y,inv:1});
+}
 let seen=new Set();function edge(a,b){let key=[Math.min(a,b),Math.max(a,b)].join('-');if(seen.has(key))return;seen.add(key);let p=pts[a],q=pts[b];edges.push({a,b,len:Math.hypot(p.x-q.x,p.y-q.y),lambda:0})}
 for(let j=0;j<rows-1;j++)for(let i=0;i<cols-1;i++){let a=j*cols+i,b=a+1,c=a+cols,d=c+1;for(let t of [[a,b,d],[a,d,c]]){tris.push(t);edge(t[0],t[1]);edge(t[1],t[2]);edge(t[2],t[0])}}
+for(let j=0;j<rows-2;j++)for(let i=0;i<cols-2;i++){let a=j*cols+i;edge(a,a+2);edge(a,a+cols*2)}
+for(let i=0;i<85;i++){let j=1+Math.floor(Math.random()*7),k=1+Math.floor(Math.random()*9);spots.push({idx:j*cols+k,dx:(Math.random()-.5)*unit*.7,dy:(Math.random()-.5)*unit*.5,r:.6+Math.random()*2.3,light:Math.random()>.5})}
 }
 function solveEdge(e,alpha){let a=pts[e.a],b=pts[e.b],dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy)||1,C=L-e.len,dl=(-C-alpha*e.lambda)/(2+alpha);e.lambda+=dl;let nx=dx/L,ny=dy/L;a.x-=nx*dl;a.y-=ny*dl;b.x+=nx*dl;b.y+=ny*dl}
 function step(){let dt=1/120,drag=.995-Number(damp.value)*.0009;
@@ -21,10 +30,41 @@ for(let iter=0;iter<9;iter++){for(let e of edges)solveEdge(e,alpha);
 if(grab>=0){let p=pts[grab];p.x+=(mouse.x-p.x)*.65;p.y+=(mouse.y-p.y)*.65}
 for(let p of pts){if(p.x<9)p.x=9;if(p.x>W-9)p.x=W-9;if(p.y<9)p.y=9;if(p.y>H-18)p.y=H-18}}
 }
-function draw(){ctx.clearRect(0,0,W,H);ctx.fillStyle='#b99c7c';ctx.fillRect(0,H-13,W,13);
-ctx.beginPath();for(let t of tris){let a=pts[t[0]],b=pts[t[1]],c=pts[t[2]];ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.closePath()}ctx.fillStyle='#8d542d';ctx.fill();
-ctx.strokeStyle='rgba(255,218,162,.17)';ctx.lineWidth=1;for(let e of edges){let a=pts[e.a],b=pts[e.b];ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
-if(grab>=0){let p=pts[grab];ctx.beginPath();ctx.arc(p.x,p.y,11,0,Math.PI*2);ctx.strokeStyle='#ffdb8d';ctx.lineWidth=3;ctx.stroke()}
+function outline(){
+const cols=11,rows=9,ids=[];
+for(let i=0;i<cols;i++)ids.push(i);
+for(let j=1;j<rows;j++)ids.push(j*cols+cols-1);
+for(let i=cols-2;i>=0;i--)ids.push((rows-1)*cols+i);
+for(let j=rows-2;j>0;j--)ids.push(j*cols);
+ctx.beginPath();let a=pts[ids[0]],b=pts[ids[1]];
+ctx.moveTo((a.x+b.x)/2,(a.y+b.y)/2);
+for(let k=1;k<=ids.length;k++){let p=pts[ids[k%ids.length]],q=pts[ids[(k+1)%ids.length]];ctx.quadraticCurveTo(p.x,p.y,(p.x+q.x)/2,(p.y+q.y)/2)}
+ctx.closePath();
+}
+function draw(){
+ctx.clearRect(0,0,W,H);
+let floor=H-13;ctx.fillStyle='#b99c7c';ctx.fillRect(0,floor,W-floor+W,13);
+let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+for(let p of pts){minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y)}
+let cx=(minX+maxX)/2,cy=(minY+maxY)/2,rx=Math.max(20,(maxX-minX)/2),ry=Math.max(20,(maxY-minY)/2);
+ctx.save();outline();ctx.clip();
+let base=ctx.createLinearGradient(minX,minY,maxX,maxY);
+base.addColorStop(0,'#a6754a');base.addColorStop(.25,'#79502e');base.addColorStop(.63,'#57351f');base.addColorStop(1,'#352016');ctx.fillStyle=base;ctx.fillRect(minX-5,minY-5,maxX-minX+10,maxY-minY+10);
+let glow=ctx.createRadialGradient(cx-rx*.36,cy-ry*.35,2,cx-rx*.15,cy,rx*1.4);
+glow.addColorStop(0,'rgba(237,183,116,.36)');glow.addColorStop(.4,'rgba(174,114,65,.12)');glow.addColorStop(1,'rgba(25,12,6,.25)');
+ctx.fillStyle=glow;ctx.fillRect(minX-10,minY-10,rx*2+20,ry*2+20);
+// Uneven compressed folds follow the moving mesh.
+for(let j of [2,4,6,7]){let row=j*11;
+ctx.beginPath();for(let i=1;i<10;i++){let p=pts[row+i],yy=p.y+Math.sin(i*.95+j)*3;if(i===1)ctx.moveTo(p.x,yy);else ctx.lineTo(p.x,yy)}
+ctx.strokeStyle='rgba(33,17,10,.28)';ctx.lineWidth=5;ctx.lineCap='round';ctx.stroke();
+ctx.strokeStyle='rgba(231,174,110,.14)';ctx.lineWidth=2;ctx.stroke()}
+for(let dot of spots){let p=pts[dot.idx];ctx.beginPath();ctx.ellipse(p.x+dot.dx,p.y+dot.dy,dot.r*1.5,dot.r*.65,.4,0,Math.PI*2);ctx.fillStyle=dot.light?'rgba(224,175,113,.13)':'rgba(35,18,11,.18)';ctx.fill()}
+let shine=ctx.createRadialGradient(cx-rx*.45,cy-ry*.43,0,cx-rx*.45,cy-ry*.43,rx*.52);
+shine.addColorStop(0,'rgba(255,223,165,.29)');shine.addColorStop(1,'rgba(255,223,165,0)');
+ctx.fillStyle=shine;ctx.fillRect(minX,minY,rx*2,ry*2);
+ctx.restore();
+outline();ctx.strokeStyle='rgba(54,31,18,.6)';ctx.lineWidth=2;ctx.stroke();
+if(grab>=0){let p=pts[grab];ctx.beginPath();ctx.arc(p.x,p.y,9,0,Math.PI*2);ctx.strokeStyle='rgba(255,217,147,.8)';ctx.lineWidth=2;ctx.stroke()}
 }
 function frame(now){let elapsed=Math.min((now-last)/1000,.05);last=now;acc+=elapsed;let n=0;while(acc>=1/120&&n++<6){step();acc-=1/120}draw();requestAnimationFrame(frame)}
 function pointer(e){let r=canvas.getBoundingClientRect();mouse.x=e.clientX-r.left;mouse.y=e.clientY-r.top}
